@@ -25,7 +25,6 @@ import java.io.File;
 import java.net.SocketException;
 import java.net.URI;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
@@ -111,6 +110,9 @@ public class PlugtestServer extends AbstractTestServer {
 
 	public static class BaseConfig {
 
+		@Option(names = { "-h", "--help" }, usageHelp = true, description = "display a help message")
+		public boolean helpRequested;
+
 		@Option(names = "--no-loopback", negatable = true, description = "enable endpoints on loopback network.")
 		public boolean loopback = true;
 
@@ -141,6 +143,45 @@ public class PlugtestServer extends AbstractTestServer {
 		@Option(names = "--interfaces-pattern", split = ",", description = "interface patterns for endpoints.")
 		public List<String> interfacePatterns;
 
+		public List<Protocol> getProtocols() {
+			List<Protocol> protocols = new ArrayList<>();
+			if (!onlyDtls) {
+				protocols.add(Protocol.UDP);
+			} else {
+				tcp = false;
+			}
+			protocols.add(Protocol.DTLS);
+			if (tcp) {
+				protocols.add(Protocol.TCP);
+				protocols.add(Protocol.TLS);
+			}
+			return protocols;
+		}
+
+		public List<InterfaceType> getInterfaceTypes() {
+			List<InterfaceType> types = new ArrayList<InterfaceType>();
+			if (external) {
+				types.add(InterfaceType.EXTERNAL);
+			}
+			if (loopback) {
+				types.add(InterfaceType.LOCAL);
+			}
+			int s = types.size();
+			if (s == 0) {
+				System.err.println("Either --loopback or --external must be enabled!");
+				System.exit(1);
+			}
+			if (ipv6) {
+				types.add(InterfaceType.IPV6);
+			}
+			if (ipv4) {
+				types.add(InterfaceType.IPV4);
+			}
+			if (s == types.size()) {
+				System.err.println("Either --ipv4 or --ipv6 must be enabled!");
+			}
+			return types;
+		}
 	}
 
 	@Command(name = "PlugtestServer", version = "(c) 2014, Institute for Pervasive Computing, ETH Zurich.")
@@ -179,37 +220,10 @@ public class PlugtestServer extends AbstractTestServer {
 
 		// create server
 		try {
-			List<Protocol> protocols;
-			
-			if (config.onlyDtls) {
-				protocols = Arrays.asList(Protocol.DTLS);
-			} else if (config.tcp) {
-				protocols = Arrays.asList(Protocol.UDP, Protocol.DTLS, Protocol.TCP, Protocol.TLS);
-			} else {
-				protocols = Arrays.asList(Protocol.UDP, Protocol.DTLS);
-			}
+			List<Protocol> protocols = config.getProtocols();
 
-			List<InterfaceType> types = new ArrayList<InterfaceType>();
-			if (config.external) {
-				types.add(InterfaceType.EXTERNAL);
-			}
-			if (config.loopback) {
-				types.add(InterfaceType.LOCAL);
-			}
-			int s = types.size();
-			if (s == 0) {
-				System.err.println("Either --loopback or --external must be enabled!");
-				System.exit(1);
-			}
-			if (config.ipv6) {
-				types.add(InterfaceType.IPV6);
-			}
-			if (config.ipv4) {
-				types.add(InterfaceType.IPV4);
-			}
-			if (s == types.size()) {
-				System.err.println("Either --ipv4 or --ipv6 must be enabled!");
-			}
+			List<InterfaceType> types = config.getInterfaceTypes();
+			
 			String pattern = config.interfacePatterns != null && !config.interfacePatterns.isEmpty()
 					? config.interfacePatterns.get(0)
 					: null;
@@ -233,7 +247,7 @@ public class PlugtestServer extends AbstractTestServer {
 				ep.addInterceptor(new AnonymizedOriginTracer(uri.getPort() + "-" + uri.getScheme()));
 				if (ep instanceof MessagePostProcessInterceptors) {
 					int interval = ep.getConfig().getInt(NetworkConfig.Keys.HEALTH_STATUS_INTERVAL);
-					final HealthStatisticLogger healthLogger = new HealthStatisticLogger(uri.getScheme(),
+					final HealthStatisticLogger healthLogger = new HealthStatisticLogger(uri.toASCIIString(),
 							!CoAP.isTcpScheme(uri.getScheme()), interval, executor);
 					if (healthLogger.isEnabled()) {
 						((MessagePostProcessInterceptors) ep).addPostProcessInterceptor(healthLogger);
